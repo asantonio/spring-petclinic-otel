@@ -1,37 +1,58 @@
-/*
- * Copyright 2012-2019 the original author or authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package org.springframework.samples.petclinic;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.context.annotation.ImportRuntimeHints;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.context.annotation.Bean;
 
-/**
- * PetClinic Spring Boot Application.
- *
- * @author Dave Syer
- *
- */
+import io.opentelemetry.api.trace.Span;
+
+import jakarta.servlet.*;
+import jakarta.servlet.http.HttpServletRequest;
+import java.io.IOException;
+
 @SpringBootApplication
-@ImportRuntimeHints(PetClinicRuntimeHints.class)
 public class PetClinicApplication {
 
 	public static void main(String[] args) {
 		SpringApplication.run(PetClinicApplication.class, args);
+	}
+
+	@Bean
+	public FilterRegistrationBean<CustomHeaderFilter> customHeaderFilter() {
+		FilterRegistrationBean<CustomHeaderFilter> registrationBean = new FilterRegistrationBean<>();
+		registrationBean.setFilter(new CustomHeaderFilter());
+		registrationBean.addUrlPatterns("/*");
+		return registrationBean;
+	}
+
+	public static class CustomHeaderFilter implements Filter {
+
+		@Override
+		public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+				throws IOException, ServletException {
+			if (request instanceof HttpServletRequest) {
+				HttpServletRequest httpRequest = (HttpServletRequest) request;
+				String headerValue = httpRequest.getHeader("x-splunk-test");
+
+				if (headerValue != null) {
+					parseCustomHeader(headerValue);
+				}
+			}
+			chain.doFilter(request, response);
+		}
+
+		public void parseCustomHeader(String headerValue) {
+			String[] headerTokens = headerValue.split(";");
+			Span currentSpan = Span.current();
+			for (String token : headerTokens) {
+				String[] keyValue = token.split("=");
+				if (keyValue.length == 2) {
+					currentSpan.setAttribute(keyValue[0], keyValue[1]);
+				}
+			}
+		}
+
 	}
 
 }
